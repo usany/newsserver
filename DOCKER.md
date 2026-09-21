@@ -40,7 +40,35 @@ docker run -p 3000:3000 --env-file .env newsserver:latest
 docker run -p 3000:3000 -v $(pwd)/logs:/app/logs newsserver:latest
 ```
 
-## Running Compiled Scripts
+## Running the Pipeline
+
+The pipeline orchestrates all three stages (crawler, scenarist, news-builder):
+
+### Locally
+
+```bash
+# Compile and run in one command
+pnpm run pipeline
+
+# Or compile first, then run
+pnpm run build:scripts
+node dist/scripts/run_pipeline.js
+
+# With options
+node dist/scripts/run_pipeline.js --week=2026-09-21 --no-ocr
+```
+
+### In Docker
+
+```bash
+# Run in container
+docker-compose run --rm app pnpm run pipeline
+
+# Or with node directly
+docker-compose run --rm app node dist/scripts/run_pipeline.js --week=2026-09-21
+```
+
+## Running Individual Compiled Scripts
 
 The scripts are compiled to JavaScript and available in the `dist/scripts` directory. You can run them in several ways:
 

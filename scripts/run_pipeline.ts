@@ -11,9 +11,12 @@
  *   3. scripts/news_builder.ts → _workspace/04_news_files/{week}_full_news.wav
  *
  * Run (from repo root):
+ *   pnpm run build:scripts && node dist/scripts/run_pipeline.js
+ *   node dist/scripts/run_pipeline.js --week=2026-08-10
+ *   node dist/scripts/run_pipeline.js --no-ocr
+ *
+ * Or using npx tsx for development:
  *   npx tsx scripts/run_pipeline.ts
- *   npx tsx scripts/run_pipeline.ts --week=2026-08-10   # specific week
- *   npx tsx scripts/run_pipeline.ts --no-ocr            # pass --no-ocr to the crawler
  *
  * Exit codes: 0 = success, 1 = any stage failed, 2 = bad args.
  */
@@ -30,6 +33,7 @@ const NOTICE_MD = path.join(WORK, "01_notice.md");
 const SCRAPE_MD = path.join(WORK, "01_scraping_report.md");
 const SCENARIO_MD = path.join(WORK, "03_news_scenario.md");
 const OUTPUT_DIR = path.join(WORK, "04_news_files");
+const DIST = path.join(ROOT, "dist", "scripts");
 
 interface Args {
   week: string | null;
@@ -42,7 +46,8 @@ function parseArgs(argv: string[]): Args {
     if (a.startsWith("--week=")) args.week = a.slice("--week=".length);
     else if (a === "--no-ocr") args.ocr = false;
     else if (a === "-h" || a === "--help") {
-      console.log("usage: npx tsx scripts/run_pipeline.ts [--week=YYYY-MM-DD] [--no-ocr]");
+      console.log("usage: node dist/scripts/run_pipeline.js [--week=YYYY-MM-DD] [--no-ocr]");
+      console.log("   or: pnpm run pipeline [--week=YYYY-MM-DD] [--no-ocr]");
       process.exit(0);
     } else {
       fail(`unknown arg: ${a}`);
@@ -120,7 +125,24 @@ async function main(): Promise<void> {
   await loadEnv();
   const args = parseArgs(process.argv.slice(2));
 
-  const crawlerArgs = ["scripts/khu_crawler.ts"];
+  // Check if compiled scripts exist, fail with helpful message if not
+  const crawlerJs = path.join(DIST, "khu_crawler.js");
+  const scenaristJs = path.join(DIST, "scenarist.js");
+  const newsBuilderJs = path.join(DIST, "news_builder.js");
+
+  for (const script of [crawlerJs, scenaristJs, newsBuilderJs]) {
+    try {
+      await fsp.stat(script);
+    } catch {
+      fail(
+        `compiled script not found: ${script}\n` +
+        `  First build scripts: pnpm run build:scripts\n` +
+        `  Then run: node ${path.join(DIST, "run_pipeline.js")}`
+      );
+    }
+  }
+
+  const crawlerArgs = [crawlerJs];
   if (args.week) crawlerArgs.push(`--week=${args.week}`);
   if (!args.ocr) crawlerArgs.push("--no-ocr");
 
@@ -128,16 +150,16 @@ async function main(): Promise<void> {
   if (!process.env.GEMINI_API_KEY) fail("GEMINI_API_KEY is not set (expected in .env or environment)");
 
   // STAGE 1 — collector + ocr-director
-  runStage("STAGE 1/3: crawling KHU notice board (collector + ocr-director)", "npx", ["tsx", ...crawlerArgs]);
+  runStage("STAGE 1/3: crawling KHU notice board (collector + ocr-director)", "node", crawlerArgs);
   await requireFile("notice markdown", NOTICE_MD);
   await requireFile("scraping report", SCRAPE_MD);
 
   // STAGE 2 — scenarist
-  runStage("STAGE 2/3: writing radio news scenario (scenarist)", "npx", ["tsx", "scripts/scenarist.ts"]);
+  runStage("STAGE 2/3: writing radio news scenario (scenarist)", "node", [scenaristJs]);
   await requireFile("news scenario", SCENARIO_MD);
 
   // STAGE 3 — news-builder (Gemini multi-speaker TTS)
-  runStage("STAGE 3/3: synthesizing full news audio (news-builder)", "npx", ["tsx", "scripts/news_builder.ts"]);
+  runStage("STAGE 3/3: synthesizing full news audio (news-builder)", "node", [newsBuilderJs]);
 
   const full = await newestFullNews();
   if (!full) fail(`news-builder did not produce a *_full_news.wav in ${OUTPUT_DIR}`);

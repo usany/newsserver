@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "build": "nest build && npm run build:scripts",
-    "build:scripts": "tsc scripts/*.ts --outDir dist/scripts --module nodenext --target ES2023 --moduleResolution nodenext --esModuleInterop true --allowSyntheticDefaultImports true --skipLibCheck true --strict true --declaration true",
+    "build:scripts": "tsc --project tsconfig.scripts.json",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "nest start",
@@ -20,7 +20,9 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
-    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
+    "pipeline": "npm run build:scripts && node dist/scripts/run_pipeline.js",
+    "pipeline:prod": "node dist/scripts/run_pipeline.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

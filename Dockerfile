@@ -17,11 +17,8 @@ COPY src ./src
 COPY scripts ./scripts
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 
-# Build application
+# Build application and scripts
 RUN pnpm run build
-
-# Compile scripts to JavaScript
-RUN npx tsc scripts/*.ts --outDir dist/scripts --module nodenext --target ES2023 --moduleResolution nodenext --esModuleInterop true --allowSyntheticDefaultImports true --skipLibCheck true --strict true --declaration true
 
 # Production stage
 FROM node:20-alpine
