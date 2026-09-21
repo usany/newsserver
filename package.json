@@ -7,9 +7,10 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && npm run build:scripts",
+    "build:scripts": "tsc scripts/*.ts --outDir dist/scripts --module nodenext --target ES2023 --moduleResolution nodenext --esModuleInterop true --allowSyntheticDefaultImports true --skipLibCheck true --strict true --declaration true",
     "deploy": "nest deploy",
-    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",

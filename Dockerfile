@@ -1,0 +1,54 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code and scripts
+COPY src ./src
+COPY scripts ./scripts
+COPY tsconfig.json tsconfig.build.json nest-cli.json ./
+
+# Build application
+RUN pnpm run build
+
+# Compile scripts to JavaScript
+RUN npx tsc scripts/*.ts --outDir dist/scripts --module nodenext --target ES2023 --moduleResolution nodenext --esModuleInterop true --allowSyntheticDefaultImports true --skipLibCheck true --strict true --declaration true
+
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install production dependencies only
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built application and scripts from builder
+COPY --from=builder /app/dist ./dist
+
+# Create a scripts directory for the compiled scripts
+RUN mkdir -p /app/bin
+
+# Expose port (adjust as needed for your app)
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+
+# Run the application
+CMD ["node", "dist/main"]
