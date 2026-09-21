@@ -39,7 +39,7 @@ import { spawnSync } from "node:child_process";
 const ROOT = process.cwd();
 const WORK = path.join(ROOT, "_workspace");
 const DEFAULT_INPUT = path.join(WORK, "03_news_scenario.md");
-const DEFAULT_OUTPUT_DIR = path.join(WORK, "04_news_files");
+const DEFAULT_OUTPUT_DIR = path.join(ROOT, "storage");
 
 const DEFAULT_MODEL = "gemini-3.1-flash-tts-preview";
 const DEFAULT_HOST_VOICE = "Kore";
