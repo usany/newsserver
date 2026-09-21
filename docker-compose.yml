@@ -5,14 +5,45 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: newsserver-app
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
     restart: unless-stopped
     volumes:
+      # Shared storage volume for pipeline outputs
+      - app-storage:/app/_workspace
       # Optional: Mount for logs/data if your app generates files
       - ./logs:/app/logs
-    # Uncomment to mount scripts directory for development
-    # volumes:
-    #   - ./dist/scripts:/app/bin
+    depends_on:
+      - cron
+    networks:
+      - newsserver
+
+  cron:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: newsserver-cron
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    # Override the default command to run cron wrapper
+    command: node dist/scripts/cron_wrapper.js
+    volumes:
+      # Shared storage volume for pipeline outputs
+      - app-storage:/app/_workspace
+      # Optional: Mount for logs
+      - ./logs:/app/logs
+    networks:
+      - newsserver
+    # No ports needed for cron service
+
+volumes:
+  app-storage:
+    driver: local
+
+networks:
+  newsserver:
+    driver: bridge
