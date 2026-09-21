@@ -7,8 +7,8 @@
  *
  * Stages:
  *   1. scripts/khu_crawler.ts   → _workspace/01_notice.md, 01_notice_images/, 02_ocr_results.md
- *   2. scripts/scenarist.mts    → _workspace/03_news_scenario.md
- *   3. scripts/news_builder.mts → _workspace/04_news_files/{week}_full_news.wav
+ *   2. scripts/scenarist.ts    → _workspace/03_news_scenario.md
+ *   3. scripts/news_builder.ts → _workspace/04_news_files/{week}_full_news.wav
  *
  * Run (from repo root):
  *   npx tsx scripts/run_pipeline.ts
@@ -133,11 +133,11 @@ async function main(): Promise<void> {
   await requireFile("scraping report", SCRAPE_MD);
 
   // STAGE 2 — scenarist
-  runStage("STAGE 2/3: writing radio news scenario (scenarist)", "npx", ["tsx", "scripts/scenarist.mts"]);
+  runStage("STAGE 2/3: writing radio news scenario (scenarist)", "npx", ["tsx", "scripts/scenarist.ts"]);
   await requireFile("news scenario", SCENARIO_MD);
 
   // STAGE 3 — news-builder (Gemini multi-speaker TTS)
-  runStage("STAGE 3/3: synthesizing full news audio (news-builder)", "npx", ["tsx", "scripts/news_builder.mts"]);
+  runStage("STAGE 3/3: synthesizing full news audio (news-builder)", "npx", ["tsx", "scripts/news_builder.ts"]);
 
   const full = await newestFullNews();
   if (!full) fail(`news-builder did not produce a *_full_news.wav in ${OUTPUT_DIR}`);
