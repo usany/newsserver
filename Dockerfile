@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-ubuntu AS builder
 
 WORKDIR /app
 
@@ -21,12 +21,15 @@ COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 RUN pnpm run build
 
 # Production stage
-FROM node:20-alpine
+FROM node:20-ubuntu
 
 WORKDIR /app
 
-# Install pnpm and Python (for OCR/easyocr in crawler)
-RUN apk add --no-cache python3 py3-pip
+# Update package manager and install Python (for OCR/easyocr in crawler)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm
 
