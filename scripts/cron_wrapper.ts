@@ -52,20 +52,7 @@ process.env.PATH = [...new Set(merged.split(path.delimiter).filter(Boolean))].jo
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(ROOT);
 
-const LOG = path.join(ROOT, "_workspace", "cron.log");
 const TZ = process.env.TZ || "Asia/Seoul";
-
-// --- Tiny logger (console + rotating log file) ---
-function log(msg: string): void {
-  const line = `[${new Date().toISOString()}] ${msg}`;
-  console.log(line);
-  fs.mkdirSync(path.dirname(LOG), { recursive: true });
-  fs.appendFileSync(LOG, line + "\n");
-  try {
-  } catch {
-    /* logging is best-effort */
-  }
-}
 
 // --- Load .env (only fills vars not already set) ---
 function loadEnv(): void {
@@ -142,13 +129,13 @@ function loadOrchestration(): PipelineConfig {
 
 // --- Fail helper ---
 function fail(msg: string): never {
-  log(`PIPELINE FAILED: ${msg}`);
+  console.log(`[${new Date().toISOString()}] PIPELINE FAILED: ${msg}`);
   process.exit(1);
 }
 
 // --- Stage runner ---
 function runStage(stage: PipelineStage, stageArgs: string[]): void {
-  log(`STAGE ${stage.id}/3: ${stage.name}`);
+  console.log(`[${new Date().toISOString()}] STAGE ${stage.id}/3: ${stage.name}`);
   const script = path.join(ROOT, stage.script);
   const args = [...stage.args, ...stageArgs];
   const res = spawnSync("node", [script, ...args], {
@@ -171,13 +158,13 @@ async function requireFile(desc: string, filePath: string): Promise<void> {
     if (matches.length === 0) fail(`no files matching ${desc} at ${filePath}`);
     const stat = await fsp.stat(path.join(dir, matches[0])).catch(() => null);
     if (!stat || stat.size === 0) fail(`${desc} is empty`);
-    log(`PASS: ${desc} (${matches[0]}, ${stat.size} bytes)`);
+    console.log(`[${new Date().toISOString()}] PASS: ${desc} (${matches[0]}, ${stat.size} bytes)`);
     return;
   }
 
   const stat = await fsp.stat(filePath).catch(() => null);
   if (!stat || stat.size === 0) fail(`${desc} missing or empty at ${filePath}`);
-  log(`PASS: ${desc} (${stat.size} bytes)`);
+  console.log(`[${new Date().toISOString()}] PASS: ${desc} (${stat.size} bytes)`);
 }
 
 // --- Build stage args from orchestration and CLI args ---
@@ -241,25 +228,25 @@ async function executePipeline(cliArgs: string[]): Promise<void> {
     }
   }
 
-  log("PIPELINE COMPLETE");
+  console.log(`[${new Date().toISOString()}] PIPELINE COMPLETE`);
 }
 
 // --- Run the pipeline in this process (--now mode) ---
 async function runPipelineOnce(cliArgs: string[]): Promise<void> {
-  log("RUN triggered (--now)");
+  console.log(`[${new Date().toISOString()}] RUN triggered (--now)`);
   try {
     await executePipeline(cliArgs);
   } catch (err) {
-    log(`FATAL: ${err instanceof Error ? err.message : String(err)}`);
+    console.log(`[${new Date().toISOString()}] FATAL: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }
 
 // --- Run pipeline in daemon mode (on cron schedule or --run-now) ---
 function runPipelineDaemon(trigger: string): void {
-  log(`RUN triggered (${trigger})`);
+  console.log(`[${new Date().toISOString()}] RUN triggered (${trigger})`);
   executePipeline([]).catch((err) => {
-    log(`pipeline error: ${err instanceof Error ? err.message : String(err)}`);
+    console.log(`[${new Date().toISOString()}] pipeline error: ${err instanceof Error ? err.message : String(err)}`);
   });
 }
 
@@ -280,7 +267,7 @@ async function main(): Promise<void> {
   const SCHEDULE = scheduleArg || process.env.SCHEDULE || "0 22 * * 5"; // default: Friday 22:00
 
   if (!cron.validate(SCHEDULE)) {
-    log(`FATAL: invalid cron expression: "${SCHEDULE}"`);
+    console.log(`[${new Date().toISOString()}] FATAL: invalid cron expression: "${SCHEDULE}"`);
     process.exit(1);
   }
 
@@ -290,28 +277,27 @@ async function main(): Promise<void> {
     { name: "radio-news", timezone: TZ, noOverlap: true },
   );
 
-  log("==============================================================");
-  log(`node-cron daemon started`);
-  log(`  schedule : ${SCHEDULE} (${TZ})`);
-  log(`  next run : ${task.getNextRun() ? task.getNextRun()!.toISOString() : "n/a"}`);
-  log(`  root     : ${ROOT}`);
-  log(`  log      : ${LOG}`);
-  log("==============================================================");
+  console.log(`[${new Date().toISOString()}] ==============================================================`);
+  console.log(`[${new Date().toISOString()}] node-cron daemon started`);
+  console.log(`[${new Date().toISOString()}]   schedule : ${SCHEDULE} (${TZ})`);
+  console.log(`[${new Date().toISOString()}]   next run : ${task.getNextRun() ? task.getNextRun()!.toISOString() : "n/a"}`);
+  console.log(`[${new Date().toISOString()}]   root     : ${ROOT}`);
+  console.log(`[${new Date().toISOString()}] ==============================================================`);
 
   // Keep the process alive (node-cron tasks keep the event loop ref'd by default).
   process.on("SIGTERM", () => {
-    log("received SIGTERM, shutting down");
+    console.log(`[${new Date().toISOString()}] received SIGTERM, shutting down`);
     task.stop();
     process.exit(0);
   });
   process.on("SIGINT", () => {
-    log("received SIGINT, shutting down");
+    console.log(`[${new Date().toISOString()}] received SIGINT, shutting down`);
     task.stop();
     process.exit(0);
   });
 }
 
 main().catch((err) => {
-  log(`FATAL: ${err instanceof Error ? err.message : String(err)}`);
+  console.log(`[${new Date().toISOString()}] FATAL: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });
