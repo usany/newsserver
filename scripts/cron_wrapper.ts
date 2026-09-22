@@ -254,12 +254,10 @@ async function main(): Promise<void> {
     { name: "radio-news", timezone: TZ, noOverlap: true },
   );
 
-  console.log(`[${new Date().toISOString()}] ==============================================================`);
   console.log(`[${new Date().toISOString()}] node-cron daemon started`);
   console.log(`[${new Date().toISOString()}]   schedule : ${SCHEDULE} (${TZ})`);
   console.log(`[${new Date().toISOString()}]   next run : ${task.getNextRun() ? task.getNextRun()!.toISOString() : "n/a"}`);
   console.log(`[${new Date().toISOString()}]   root     : ${ROOT}`);
-  console.log(`[${new Date().toISOString()}] ==============================================================`);
 
   // Keep the process alive (node-cron tasks keep the event loop ref'd by default).
   process.on("SIGTERM", () => {
