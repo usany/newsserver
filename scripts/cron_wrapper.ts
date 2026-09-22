@@ -230,7 +230,7 @@ function runPipelineDaemon(trigger: string): void {
 
 // --- Main ---
 async function main(): Promise<void> {
-  const { runNow, schedule: scheduleArg, pipelineArgs } = parseArgs(
+  const { runNow, schedule, pipelineArgs } = parseArgs(
     process.argv.slice(2)
   );
 
@@ -241,7 +241,7 @@ async function main(): Promise<void> {
   }
 
   // Daemon mode
-  const SCHEDULE = scheduleArg || process.env.SCHEDULE || "0 22 * * 5"; // default: Friday 22:00
+  const SCHEDULE = schedule || process.env.SCHEDULE || "0 22 * * 5"; // default: Friday 22:00
 
   if (!cron.validate(SCHEDULE)) {
     console.log(`[${new Date().toISOString()}] FATAL: invalid cron expression: "${SCHEDULE}"`);
