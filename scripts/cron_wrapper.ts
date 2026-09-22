@@ -35,6 +35,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
+import { fileURLToPath } from "node:url";
 
 const HOME = os.homedir();
 
@@ -44,13 +45,12 @@ const extra = [
   "/usr/local/bin",
   "/opt/homebrew/opt/node/bin",
   `${HOME}/.local/bin`,
-].join(":");
-const sep = ":";
-const merged = `${extra}${sep}${process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"}`;
-process.env.PATH = [...new Set(merged.split(sep).filter(Boolean))].join(sep);
+].join(path.delimiter);
+const merged = `${extra}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"}`;
+process.env.PATH = [...new Set(merged.split(path.delimiter).filter(Boolean))].join(path.delimiter);
 
 // --- Resolve repo root and cd there ---
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(ROOT);
 
 const LOG = path.join(ROOT, "_workspace", "cron.log");
