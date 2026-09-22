@@ -92,7 +92,7 @@ function buildPrompt(noticeMarkdown: string): string {
     "**호스트:** ...",
     "```",
     "",
-    "Write the scenario to a markdown file named `03_news_scenario.md`.",
+    "`_workspace/03_news_scenario.md` 파일에 결과를 작성하라. (파일 생성/쓰기 도구를 사용해 직접 작성)",
     "",
     "---",
     "아래는 이번 주 공지사항 원문이다.",
@@ -138,10 +138,10 @@ async function main() {
   const session = client.session;
 
   try {
-    // 3. Create a session rooted at the output directory (model is set at prompt time).
+    // 3. Create a session rooted at the project (model is set at prompt time).
     const created = await session.create({
       body: { title: "Radio News — scenarist" },
-      query: { directory: args.output },
+      query: { directory: ROOT },
     });
     const sessionID = created.data?.id;
     if (!sessionID) {
@@ -153,7 +153,7 @@ async function main() {
     console.log(`[scenarist] sending scenarist prompt${args.model ? ` (${args.model})` : " (opencode default model)"}...`);
     const promptRes = await session.prompt({
       path: { id: sessionID },
-      query: { directory: args.output },
+      query: { directory: ROOT },
       body: {
         ...(args.model ? { model: { providerID, modelID } } : {}),
         parts: [{ type: "text", text: buildPrompt(noticeMarkdown) }],
@@ -175,7 +175,7 @@ async function main() {
     while (Date.now() < deadline) {
       lastRes = await session.message({
         path: { id: sessionID, messageID },
-        query: { directory: args.output },
+        query: { directory: ROOT },
       });
       if (isDone(lastRes)) break;
       await sleep(1500);
@@ -187,22 +187,21 @@ async function main() {
 
     // 6. Verify the output file exists.
     const out = args.output;
-    const outputFile = path.join(out, "03_news_scenario.md");
     let finalText: string;
     try {
-      finalText = await fsp.readFile(outputFile, "utf8");
-    } catch (err) {
-      const entries = await fsp.readdir(out).catch(() => []);
+      finalText = await fsp.readFile(out, "utf8");
+    } catch {
+      const entries = await fsp.readdir(WORK).catch(() => []);
       const candidates = entries.filter((f) => f.includes("scenario")).sort();
       if (candidates.length === 0) {
-        throw new Error(`no scenario file found in ${out}`);
+        throw new Error(`output not found at ${out} and no scenario file under ${WORK}`);
       }
-      const fallback = path.join(out, candidates[0]);
-      console.warn(`[scenarist] WARNING: expected ${outputFile}, using ${fallback}`);
+      const fallback = path.join(WORK, candidates[0]);
+      console.warn(`[scenarist] WARNING: ${out} not found; using ${fallback}`);
       finalText = await fsp.readFile(fallback, "utf8");
     }
 
-    console.log(`[scenarist] DONE — wrote ${finalText.length} chars to ${outputFile}`);
+    console.log(`[scenarist] DONE — wrote ${finalText.length} chars to ${out}`);
   } finally {
     server.close();
   }
