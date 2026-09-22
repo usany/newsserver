@@ -16,8 +16,8 @@
  *   under a process manager (pm2, systemd, nohup, etc.).
  *
  * One-off mode (--no-cron):
- *   Executes the pipeline once immediately from pipeline-orchestration.json.
- *   This is the primary entry point for manual pipeline runs.
+ *   Executes the pipeline once immediately from pipeline-orchestration.json,
+ *   then exits. This is the primary entry point for manual pipeline runs.
  *
  * Schedule is read from the SCHEDULE env var or --schedule="..." (default Fri 22:00).
  *
@@ -27,7 +27,6 @@
  *   npx tsx scripts/cron_wrapper.ts --no-cron --no-ocr
  *   npx tsx scripts/cron_wrapper.ts                            # daemon, default schedule
  *   npx tsx scripts/cron_wrapper.ts --schedule="0 9 * * 1"
- *   npx tsx scripts/cron_wrapper.ts --run-now                  # legacy: run once then daemon
  */
 import cron from "node-cron";
 import { spawnSync } from "node:child_process";
@@ -87,25 +86,21 @@ function loadEnv(): void {
 function parseArgs(argv: string[]): {
   noCron: boolean;
   schedule: string | null;
-  runNow: boolean;
   pipelineArgs: string[];
 } {
   let noCron = false;
   let schedule: string | null = null;
-  let runNow = false;
   const pipelineArgs: string[] = [];
 
   for (const a of argv) {
     if (a === "--no-cron") noCron = true;
     else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
-    else if (a === "--run-now") runNow = true;
     else if (a === "-h" || a === "--help") {
-      console.log("usage: npx tsx scripts/cron_wrapper.ts [--no-cron] [--schedule='0 22 * * 5'] [--run-now]");
+      console.log("usage: npx tsx scripts/cron_wrapper.ts [--no-cron] [--schedule='0 22 * * 5']");
       console.log("");
       console.log("Options:");
       console.log("  --no-cron              Run pipeline once and exit (--week=DATE and --no-ocr are supported)");
       console.log("  --schedule=EXPR        Cron expression for daemon mode (default: '0 22 * * 5')");
-      console.log("  --run-now              Legacy: run once on startup, then enter daemon mode");
       process.exit(0);
     } else if (a.startsWith("--week=") || a === "--no-ocr") {
       pipelineArgs.push(a);
@@ -114,7 +109,7 @@ function parseArgs(argv: string[]): {
       process.exit(2);
     }
   }
-  return { noCron, schedule, runNow, pipelineArgs };
+  return { noCron, schedule, pipelineArgs };
 }
 
 // --- Load pipeline orchestration ---
@@ -271,7 +266,7 @@ function runPipelineDaemon(trigger: string): void {
 // --- Main ---
 async function main(): Promise<void> {
   loadEnv();
-  const { noCron, schedule: scheduleArg, runNow, pipelineArgs } = parseArgs(
+  const { noCron, schedule: scheduleArg, pipelineArgs } = parseArgs(
     process.argv.slice(2)
   );
 
@@ -287,11 +282,6 @@ async function main(): Promise<void> {
   if (!cron.validate(SCHEDULE)) {
     log(`FATAL: invalid cron expression: "${SCHEDULE}"`);
     process.exit(1);
-  }
-
-  if (runNow) {
-    log("--run-now: executing pipeline immediately");
-    await runPipelineDaemon("manual --run-now");
   }
 
   const task = cron.schedule(
