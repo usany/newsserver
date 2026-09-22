@@ -34,7 +34,7 @@ import * as path from "node:path";
 const ROOT = process.cwd();
 const WORK = path.join(ROOT, "_workspace");
 const DEFAULT_INPUT = path.join(WORK, "01_notice.md");
-const DEFAULT_OUTPUT = path.join(ROOT, "store");
+const DEFAULT_OUTPUT = path.join(WORK, "03_news_scenario.md");
 
 // Optional: "<provider>/<model>". Override via OPENCODE_MODEL or --model.
 // opencode provider free-tier model (the previous deepseek-v4-flash-free was
