@@ -52,7 +52,7 @@ process.env.PATH = [...new Set(merged.split(path.delimiter).filter(Boolean))].jo
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(ROOT);
 
-const TZ = process.env.TZ || "Asia/Seoul";
+const TZ = "Asia/Seoul";
 
 // --- Parse args ---
 function parseArgs(argv: string[]): {
