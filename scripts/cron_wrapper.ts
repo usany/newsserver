@@ -67,7 +67,7 @@ function parseArgs(argv: string[]): {
   for (const a of argv) {
     if (a === "--now") runNow = true;
     else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
-    if (a.startsWith("--week=") || a === "--no-ocr") {
+    else if (a.startsWith("--week=") || a === "--no-ocr") {
       pipelineArgs.push(a);
     } else {
       console.error(`unknown arg: ${a}`);
