@@ -84,16 +84,16 @@ function loadEnv(): void {
 
 // --- Parse args ---
 function parseArgs(argv: string[]): {
-  noCron: boolean;
+  runNow: boolean;
   schedule: string | null;
   pipelineArgs: string[];
 } {
-  let noCron = false;
+  let runNow = false;
   let schedule: string | null = null;
   const pipelineArgs: string[] = [];
 
   for (const a of argv) {
-    if (a === "--no-cron") noCron = true;
+    if (a === "--no-cron") runNow = true;
     else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
     else if (a === "-h" || a === "--help") {
       console.log("usage: npx tsx scripts/cron_wrapper.ts [--no-cron] [--schedule='0 22 * * 5']");
@@ -109,7 +109,7 @@ function parseArgs(argv: string[]): {
       process.exit(2);
     }
   }
-  return { noCron, schedule, pipelineArgs };
+  return { runNow, schedule, pipelineArgs };
 }
 
 // --- Load pipeline orchestration ---
@@ -266,11 +266,11 @@ function runPipelineDaemon(trigger: string): void {
 // --- Main ---
 async function main(): Promise<void> {
   loadEnv();
-  const { noCron, schedule: scheduleArg, pipelineArgs } = parseArgs(
+  const { runNow, schedule: scheduleArg, pipelineArgs } = parseArgs(
     process.argv.slice(2)
   );
 
-  if (noCron) {
+  if (runNow) {
     // One-off mode: run pipeline once and exit
     await runPipelineOnce(pipelineArgs);
     process.exit(0);
