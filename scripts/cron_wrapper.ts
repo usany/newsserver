@@ -67,14 +67,7 @@ function parseArgs(argv: string[]): {
   for (const a of argv) {
     if (a === "--now") runNow = true;
     else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
-    else if (a === "-h" || a === "--help") {
-      console.log("usage: npx tsx scripts/cron_wrapper.ts [--now] [--schedule='0 22 * * 5']");
-      console.log("");
-      console.log("Options:");
-      console.log("  --now              Run pipeline once and exit (--week=DATE and --no-ocr are supported)");
-      console.log("  --schedule=EXPR        Cron expression for daemon mode (default: '0 22 * * 5')");
-      process.exit(0);
-    } else if (a.startsWith("--week=") || a === "--no-ocr") {
+    if (a.startsWith("--week=") || a === "--no-ocr") {
       pipelineArgs.push(a);
     } else {
       console.error(`unknown arg: ${a}`);
