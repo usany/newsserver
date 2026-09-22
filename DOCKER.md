@@ -42,7 +42,8 @@ docker run -p 3000:3000 -v $(pwd)/logs:/app/logs newsserver:latest
 
 ## Running the Pipeline
 
-The pipeline orchestrates all three stages (crawler, scenarist, news-builder):
+The pipeline orchestrates all three stages (crawler, scenarist, news-builder) using pipeline-orchestration.json.
+The cron_wrapper with --no-cron is the entry point for running the pipeline once.
 
 ### Locally
 
@@ -50,12 +51,12 @@ The pipeline orchestrates all three stages (crawler, scenarist, news-builder):
 # Compile and run in one command
 pnpm run pipeline
 
-# Or compile first, then run
+# Or compile first, then run with cron_wrapper
 pnpm run build:scripts
-node dist/scripts/run_pipeline.js
+npx tsx scripts/cron_wrapper.ts --no-cron
 
 # With options
-node dist/scripts/run_pipeline.js --week=2026-09-21 --no-ocr
+npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-09-21 --no-ocr
 ```
 
 ### In Docker
@@ -64,8 +65,8 @@ node dist/scripts/run_pipeline.js --week=2026-09-21 --no-ocr
 # Run in container
 docker-compose run --rm app pnpm run pipeline
 
-# Or with node directly
-docker-compose run --rm app node dist/scripts/run_pipeline.js --week=2026-09-21
+# Or with tsx directly
+docker-compose run --rm app npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-09-21
 ```
 
 ## Running Individual Compiled Scripts
@@ -87,7 +88,6 @@ node dist/scripts/cron_wrapper.js
 node dist/scripts/install_cron.js
 node dist/scripts/news_builder.js
 node dist/scripts/khu_crawler.js
-node dist/scripts/run_pipeline.js
 node dist/scripts/scenarist.js
 ```
 

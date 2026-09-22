@@ -1,32 +1,39 @@
 #!/usr/bin/env -S npx tsx
 /**
- * scripts/cron_wrapper.ts — node-cron daemon for the news pipeline (TypeScript).
+ * scripts/cron_wrapper.ts — node-cron daemon & pipeline executor for the news pipeline.
  *
- * Runs as a long-lived process that schedules the pipeline with node-cron
- * (instead of relying on the OS crontab). It:
- *   1. Restores a usable PATH (node/npx/tsx/playwright)
- *   2. cd's to the repo root and loads .env
- *   3. Registers a node-cron job (default: every Friday 22:00, Asia/Seoul)
- *   4. Runs scripts/run_pipeline.ts in a child process when the job fires
- *      (noOverlap guards against concurrent runs if a run overruns its slot)
+ * Daemon mode (default):
+ *   Runs as a long-lived process that schedules the pipeline with node-cron
+ *   (instead of relying on the OS crontab). It:
+ *     1. Restores a usable PATH (node/npx/tsx/playwright)
+ *     2. cd's to the repo root and loads .env
+ *     3. Registers a node-cron job (default: every Friday 22:00, Asia/Seoul)
+ *     4. Executes the pipeline from orchestration.json when the job fires
+ *        (noOverlap guards against concurrent runs if a run overruns its slot)
  *
- * This process is meant to be kept alive by a launchd LaunchAgent installed by
- * scripts/install_cron.ts (see that file). Windows/Linux users can run it
- * under a process manager (pm2, systemd, nohup, etc.).
+ *   This process is meant to be kept alive by a launchd LaunchAgent installed by
+ *   scripts/install_cron.ts (see that file). Windows/Linux users can run it
+ *   under a process manager (pm2, systemd, nohup, etc.).
+ *
+ * One-off mode (--no-cron):
+ *   Executes the pipeline once immediately from pipeline-orchestration.json.
+ *   This is the primary entry point for manual pipeline runs.
  *
  * Schedule is read from the SCHEDULE env var or --schedule="..." (default Fri 22:00).
- * Use --run-now to execute the pipeline once immediately on startup (for testing).
  *
  * Run:
- *   npx tsx scripts/cron_wrapper.ts                        # daemon, default schedule
+ *   npx tsx scripts/cron_wrapper.ts --no-cron                  # run once
+ *   npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-08-10
+ *   npx tsx scripts/cron_wrapper.ts --no-cron --no-ocr
+ *   npx tsx scripts/cron_wrapper.ts                            # daemon, default schedule
  *   npx tsx scripts/cron_wrapper.ts --schedule="0 9 * * 1"
- *   SCHEDULE="0 9 * * 1" npx tsx scripts/cron_wrapper.ts
- *   npx tsx scripts/cron_wrapper.ts --run-now
+ *   npx tsx scripts/cron_wrapper.ts --run-now                  # legacy: run once then daemon
  */
 import cron from "node-cron";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import * as path from "node:path";
 import * as fs from "node:fs";
+import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 
 const HOME = os.homedir();
@@ -76,75 +83,245 @@ function loadEnv(): void {
   }
 }
 
-// --- Parse --schedule / --run-now args ---
-function parseArgs(argv: string[]): { schedule: string | null; runNow: boolean } {
+// --- Parse args ---
+function parseArgs(argv: string[]): {
+  noCron: boolean;
+  schedule: string | null;
+  runNow: boolean;
+  pipelineArgs: string[];
+} {
+  let noCron = false;
   let schedule: string | null = null;
   let runNow = false;
+  const pipelineArgs: string[] = [];
+
   for (const a of argv) {
-    if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
+    if (a === "--no-cron") noCron = true;
+    else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
     else if (a === "--run-now") runNow = true;
     else if (a === "-h" || a === "--help") {
-      console.log("usage: npx tsx scripts/cron_wrapper.ts [--schedule='0 22 * * 5'] [--run-now]");
+      console.log("usage: npx tsx scripts/cron_wrapper.ts [--no-cron] [--schedule='0 22 * * 5'] [--run-now]");
+      console.log("");
+      console.log("Options:");
+      console.log("  --no-cron              Run pipeline once and exit (--week=DATE and --no-ocr are supported)");
+      console.log("  --schedule=EXPR        Cron expression for daemon mode (default: '0 22 * * 5')");
+      console.log("  --run-now              Legacy: run once on startup, then enter daemon mode");
       process.exit(0);
+    } else if (a.startsWith("--week=") || a === "--no-ocr") {
+      pipelineArgs.push(a);
     } else {
       console.error(`unknown arg: ${a}`);
       process.exit(2);
     }
   }
-  return { schedule, runNow };
+  return { noCron, schedule, runNow, pipelineArgs };
 }
 
-// --- Run the pipeline in a child process (aborts daemon-ish; logs exit) ---
-function runPipeline(trigger: string): void {
-  log(`RUN triggered (${trigger})`);
-  const child = spawn("npx", ["tsx", "scripts/run_pipeline.ts"], {
+// --- Load pipeline orchestration ---
+interface PipelineStage {
+  id: number;
+  name: string;
+  script: string;
+  args: string[];
+  outputs: Array<{ desc: string; path: string }>;
+}
+
+interface PipelineConfig {
+  name: string;
+  stages: PipelineStage[];
+  env: { required: string[]; dotenv: string };
+  args: Array<{
+    name: string;
+    flag: string;
+    type: string;
+    default?: boolean | string;
+    stages: number[];
+  }>;
+}
+
+function loadOrchestration(): PipelineConfig {
+  const orchestPath = path.join(ROOT, "pipeline-orchestration.json");
+  const raw = fs.readFileSync(orchestPath, "utf8");
+  return JSON.parse(raw) as PipelineConfig;
+}
+
+// --- Fail helper ---
+function fail(msg: string): never {
+  log(`PIPELINE FAILED: ${msg}`);
+  process.exit(1);
+}
+
+// --- Stage runner ---
+function runStage(stage: PipelineStage, stageArgs: string[]): void {
+  log(`STAGE ${stage.id}/3: ${stage.name}`);
+  const script = path.join(ROOT, stage.script);
+  const args = [...stage.args, ...stageArgs];
+  const res = spawnSync("node", [script, ...args], {
     cwd: ROOT,
     stdio: "inherit",
-    env: { ...process.env },
   });
-  child.on("error", (err) => log(`FATAL: could not spawn pipeline: ${err.message}`));
-  child.on("exit", (code, sig) => {
-    log(`pipeline finished — exit=${code ?? "null"} signal=${sig ?? "null"}`);
+  if (res.error) fail(`could not run stage: ${res.error.message}`);
+  if (res.status !== 0) fail(`stage exited with status ${res.status}`);
+}
+
+// --- Output validation ---
+async function requireFile(desc: string, filePath: string): Promise<void> {
+  // Handle glob patterns
+  if (filePath.includes("*")) {
+    const dir = path.dirname(filePath);
+    const pattern = path.basename(filePath);
+    const files = await fsp.readdir(dir).catch(() => [] as string[]);
+    const globPattern = pattern.replace(/\*/g, "");
+    const matches = files.filter((f) => f.includes(globPattern));
+    if (matches.length === 0) fail(`no files matching ${desc} at ${filePath}`);
+    const stat = await fsp.stat(path.join(dir, matches[0])).catch(() => null);
+    if (!stat || stat.size === 0) fail(`${desc} is empty`);
+    log(`PASS: ${desc} (${matches[0]}, ${stat.size} bytes)`);
+    return;
+  }
+
+  const stat = await fsp.stat(filePath).catch(() => null);
+  if (!stat || stat.size === 0) fail(`${desc} missing or empty at ${filePath}`);
+  log(`PASS: ${desc} (${stat.size} bytes)`);
+}
+
+// --- Build stage args from orchestration and CLI args ---
+function buildStageArgs(
+  stageId: number,
+  config: PipelineConfig,
+  cliArgs: string[]
+): string[] {
+  const args: string[] = [];
+  const relevantArgDefs = config.args.filter((a) => a.stages.includes(stageId));
+
+  for (const def of relevantArgDefs) {
+    const cliArg = cliArgs.find(
+      (a) =>
+        a.startsWith(`${def.flag}=`) ||
+        a === def.flag
+    );
+
+    if (cliArg) {
+      if (def.type === "boolean") {
+        args.push(def.flag);
+      } else {
+        args.push(cliArg);
+      }
+    }
+  }
+
+  return args;
+}
+
+// --- Execute pipeline from orchestration ---
+async function executePipeline(cliArgs: string[]): Promise<void> {
+  const config = loadOrchestration();
+
+  // Check env requirements
+  for (const key of config.env.required) {
+    if (!process.env[key]) {
+      fail(`${key} is not set (expected in .env or environment)`);
+    }
+  }
+
+  // Check compiled scripts exist
+  for (const stage of config.stages) {
+    const scriptPath = path.join(ROOT, stage.script);
+    try {
+      fs.statSync(scriptPath);
+    } catch {
+      fail(`compiled script not found: ${scriptPath}\n  Run: pnpm run build:scripts`);
+    }
+  }
+
+  // Execute each stage
+  for (const stage of config.stages) {
+    const stageArgs = buildStageArgs(stage.id, config, cliArgs);
+    runStage(stage, stageArgs);
+
+    // Validate outputs
+    for (const output of stage.outputs) {
+      const outputPath = path.join(ROOT, output.path);
+      await requireFile(output.desc, outputPath);
+    }
+  }
+
+  log("PIPELINE COMPLETE");
+}
+
+// --- Run the pipeline in this process (--no-cron mode) ---
+async function runPipelineOnce(cliArgs: string[]): Promise<void> {
+  log("RUN triggered (--no-cron)");
+  try {
+    await executePipeline(cliArgs);
+  } catch (err) {
+    log(`FATAL: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+// --- Run pipeline in daemon mode (on cron schedule or --run-now) ---
+function runPipelineDaemon(trigger: string): void {
+  log(`RUN triggered (${trigger})`);
+  executePipeline([]).catch((err) => {
+    log(`pipeline error: ${err instanceof Error ? err.message : String(err)}`);
   });
 }
 
 // --- Main ---
-loadEnv();
-const { schedule: scheduleArg, runNow } = parseArgs(process.argv.slice(2));
-const SCHEDULE = scheduleArg || process.env.SCHEDULE || "0 22 * * 5"; // default: Friday 22:00
+async function main(): Promise<void> {
+  loadEnv();
+  const { noCron, schedule: scheduleArg, runNow, pipelineArgs } = parseArgs(
+    process.argv.slice(2)
+  );
 
-if (!cron.validate(SCHEDULE)) {
-  log(`FATAL: invalid cron expression: "${SCHEDULE}"`);
+  if (noCron) {
+    // One-off mode: run pipeline once and exit
+    await runPipelineOnce(pipelineArgs);
+    process.exit(0);
+  }
+
+  // Daemon mode
+  const SCHEDULE = scheduleArg || process.env.SCHEDULE || "0 22 * * 5"; // default: Friday 22:00
+
+  if (!cron.validate(SCHEDULE)) {
+    log(`FATAL: invalid cron expression: "${SCHEDULE}"`);
+    process.exit(1);
+  }
+
+  if (runNow) {
+    log("--run-now: executing pipeline immediately");
+    await runPipelineDaemon("manual --run-now");
+  }
+
+  const task = cron.schedule(
+    SCHEDULE,
+    () => runPipelineDaemon(`scheduled ${SCHEDULE}`),
+    { name: "radio-news", timezone: TZ, noOverlap: true },
+  );
+
+  log("==============================================================");
+  log(`node-cron daemon started`);
+  log(`  schedule : ${SCHEDULE} (${TZ})`);
+  log(`  next run : ${task.getNextRun() ? task.getNextRun()!.toISOString() : "n/a"}`);
+  log(`  root     : ${ROOT}`);
+  log(`  log      : ${LOG}`);
+  log("==============================================================");
+
+  // Keep the process alive (node-cron tasks keep the event loop ref'd by default).
+  process.on("SIGTERM", () => {
+    log("received SIGTERM, shutting down");
+    task.stop();
+    process.exit(0);
+  });
+  process.on("SIGINT", () => {
+    log("received SIGINT, shutting down");
+    task.stop();
+    process.exit(0);
+  });
+}
+
+main().catch((err) => {
+  log(`FATAL: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
-}
-
-if (runNow) {
-  log("--run-now: executing pipeline immediately");
-  runPipeline("manual --run-now");
-}
-
-const task = cron.schedule(
-  SCHEDULE,
-  () => runPipeline(`scheduled ${SCHEDULE}`),
-  { name: "radio-news", timezone: TZ, noOverlap: true },
-);
-
-log("==============================================================");
-log(`node-cron daemon started`);
-log(`  schedule : ${SCHEDULE} (${TZ})`);
-log(`  next run : ${task.getNextRun() ? task.getNextRun()!.toISOString() : "n/a"}`);
-log(`  root     : ${ROOT}`);
-log(`  log      : ${LOG}`);
-log("==============================================================");
-
-// Keep the process alive (node-cron tasks keep the event loop ref'd by default).
-process.on("SIGTERM", () => {
-  log("received SIGTERM, shutting down");
-  task.stop();
-  process.exit(0);
-});
-process.on("SIGINT", () => {
-  log("received SIGINT, shutting down");
-  task.stop();
-  process.exit(0);
 });

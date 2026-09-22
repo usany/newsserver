@@ -1,0 +1,66 @@
+{
+  "name": "news-pipeline",
+  "description": "News auto-production pipeline orchestrator",
+  "stages": [
+    {
+      "id": 1,
+      "name": "crawling KHU notice board (collector + ocr-director)",
+      "script": "dist/scripts/khu_crawler.js",
+      "args": [],
+      "outputs": [
+        {
+          "desc": "notice markdown",
+          "path": "_workspace/01_notice.md"
+        },
+        {
+          "desc": "scraping report",
+          "path": "_workspace/01_scraping_report.md"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "writing radio news scenario (scenarist)",
+      "script": "dist/scripts/scenarist.js",
+      "args": [],
+      "outputs": [
+        {
+          "desc": "news scenario",
+          "path": "_workspace/03_news_scenario.md"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "synthesizing full news audio (news-builder)",
+      "script": "dist/scripts/news_builder.js",
+      "args": [],
+      "outputs": [
+        {
+          "desc": "full news audio",
+          "path": "_workspace/04_news_files/*_full_news.wav"
+        }
+      ]
+    }
+  ],
+  "env": {
+    "required": ["GEMINI_API_KEY"],
+    "dotenv": ".env"
+  },
+  "args": [
+    {
+      "name": "week",
+      "flag": "--week",
+      "type": "string",
+      "description": "Week date (YYYY-MM-DD) for pipeline",
+      "stages": [1]
+    },
+    {
+      "name": "ocr",
+      "flag": "--no-ocr",
+      "type": "boolean",
+      "default": true,
+      "stages": [1]
+    }
+  ]
+}
