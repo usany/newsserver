@@ -54,21 +54,6 @@ process.chdir(ROOT);
 
 const TZ = process.env.TZ || "Asia/Seoul";
 
-// --- Load .env (only fills vars not already set) ---
-function loadEnv(): void {
-  try {
-    const raw = fs.readFileSync(path.join(ROOT, ".env"), "utf8");
-    for (const l of raw.split(/\r?\n/)) {
-      const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(l);
-      if (m && process.env[m[1]] === undefined) {
-        process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
-      }
-    }
-  } catch {
-    /* .env missing — rely on env vars */
-  }
-}
-
 // --- Parse args ---
 function parseArgs(argv: string[]): {
   runNow: boolean;
@@ -252,7 +237,6 @@ function runPipelineDaemon(trigger: string): void {
 
 // --- Main ---
 async function main(): Promise<void> {
-  loadEnv();
   const { runNow, schedule: scheduleArg, pipelineArgs } = parseArgs(
     process.argv.slice(2)
   );
