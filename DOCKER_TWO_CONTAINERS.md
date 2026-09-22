@@ -74,8 +74,8 @@ docker-compose up -d app
 # Run only the cron service
 docker-compose up -d cron
 
-# Run a one-time command (e.g., run pipeline immediately with --no-cron)
-docker-compose run --rm cron npx tsx scripts/cron_wrapper.ts --no-cron
+# Run a one-time command (e.g., run pipeline immediately with --now)
+docker-compose run --rm cron npx tsx scripts/cron_wrapper.ts --now
 ```
 
 ## Environment Configuration
@@ -124,7 +124,7 @@ All scripts files are copied to `/app/scripts` in the container, making them acc
 │  (runs on schedule: Friday 22:00)           │
 └──────────┬──────────────────────────────────┘
            │
-           ├─> orchestration (from cron_wrapper --no-cron)
+           ├─> orchestration (from cron_wrapper --now)
            │   ├─> khu_crawler.ts
            │   │   └─> easyocr_helper.py (Python OCR)
            │   ├─> scenarist.ts
@@ -200,8 +200,8 @@ docker-compose exec cron node -e "
   console.log('Valid:', cron.validate('0 22 * * 5'));
 "
 
-# Test pipeline manually with --no-cron
-docker-compose run --rm cron npx tsx scripts/cron_wrapper.ts --no-cron
+# Test pipeline manually with --now
+docker-compose run --rm cron npx tsx scripts/cron_wrapper.ts --now
 ```
 
 ### File Permissions Issues

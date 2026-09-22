@@ -21,8 +21,8 @@
     "test:cov": "vitest run --coverage",
     "test:debug": "vitest --inspect-brk --no-file-parallelism",
     "test:e2e": "vitest run --config ./vitest.config.e2e.ts",
-    "pipeline": "npm run build:scripts && npx tsx scripts/cron_wrapper.ts --no-cron",
-    "pipeline:prod": "npx tsx scripts/cron_wrapper.ts --no-cron"
+    "pipeline": "npm run build:scripts && npx tsx scripts/cron_wrapper.ts --now",
+    "pipeline:prod": "npx tsx scripts/cron_wrapper.ts --now"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",

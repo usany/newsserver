@@ -43,7 +43,7 @@ docker run -p 3000:3000 -v $(pwd)/logs:/app/logs newsserver:latest
 ## Running the Pipeline
 
 The pipeline orchestrates all three stages (crawler, scenarist, news-builder) using pipeline-orchestration.json.
-The cron_wrapper with --no-cron is the entry point for running the pipeline once.
+The cron_wrapper with --now is the entry point for running the pipeline once.
 
 ### Locally
 
@@ -53,10 +53,10 @@ pnpm run pipeline
 
 # Or compile first, then run with cron_wrapper
 pnpm run build:scripts
-npx tsx scripts/cron_wrapper.ts --no-cron
+npx tsx scripts/cron_wrapper.ts --now
 
 # With options
-npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-09-21 --no-ocr
+npx tsx scripts/cron_wrapper.ts --now --week=2026-09-21 --no-ocr
 ```
 
 ### In Docker
@@ -66,7 +66,7 @@ npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-09-21 --no-ocr
 docker-compose run --rm app pnpm run pipeline
 
 # Or with tsx directly
-docker-compose run --rm app npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-09-21
+docker-compose run --rm app npx tsx scripts/cron_wrapper.ts --now --week=2026-09-21
 ```
 
 ## Running Individual Compiled Scripts

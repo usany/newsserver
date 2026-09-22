@@ -15,16 +15,16 @@
  *   scripts/install_cron.ts (see that file). Windows/Linux users can run it
  *   under a process manager (pm2, systemd, nohup, etc.).
  *
- * One-off mode (--no-cron):
+ * One-off mode (--now):
  *   Executes the pipeline once immediately from pipeline-orchestration.json,
  *   then exits. This is the primary entry point for manual pipeline runs.
  *
  * Schedule is read from the SCHEDULE env var or --schedule="..." (default Fri 22:00).
  *
  * Run:
- *   npx tsx scripts/cron_wrapper.ts --no-cron                  # run once
- *   npx tsx scripts/cron_wrapper.ts --no-cron --week=2026-08-10
- *   npx tsx scripts/cron_wrapper.ts --no-cron --no-ocr
+ *   npx tsx scripts/cron_wrapper.ts --now                  # run once
+ *   npx tsx scripts/cron_wrapper.ts --now --week=2026-08-10
+ *   npx tsx scripts/cron_wrapper.ts --now --no-ocr
  *   npx tsx scripts/cron_wrapper.ts                            # daemon, default schedule
  *   npx tsx scripts/cron_wrapper.ts --schedule="0 9 * * 1"
  */
@@ -59,9 +59,9 @@ const TZ = process.env.TZ || "Asia/Seoul";
 function log(msg: string): void {
   const line = `[${new Date().toISOString()}] ${msg}`;
   console.log(line);
+  fs.mkdirSync(path.dirname(LOG), { recursive: true });
+  fs.appendFileSync(LOG, line + "\n");
   try {
-    fs.mkdirSync(path.dirname(LOG), { recursive: true });
-    fs.appendFileSync(LOG, line + "\n");
   } catch {
     /* logging is best-effort */
   }
@@ -93,13 +93,13 @@ function parseArgs(argv: string[]): {
   const pipelineArgs: string[] = [];
 
   for (const a of argv) {
-    if (a === "--no-cron") runNow = true;
+    if (a === "--now") runNow = true;
     else if (a.startsWith("--schedule=")) schedule = a.slice("--schedule=".length);
     else if (a === "-h" || a === "--help") {
-      console.log("usage: npx tsx scripts/cron_wrapper.ts [--no-cron] [--schedule='0 22 * * 5']");
+      console.log("usage: npx tsx scripts/cron_wrapper.ts [--now] [--schedule='0 22 * * 5']");
       console.log("");
       console.log("Options:");
-      console.log("  --no-cron              Run pipeline once and exit (--week=DATE and --no-ocr are supported)");
+      console.log("  --now              Run pipeline once and exit (--week=DATE and --no-ocr are supported)");
       console.log("  --schedule=EXPR        Cron expression for daemon mode (default: '0 22 * * 5')");
       process.exit(0);
     } else if (a.startsWith("--week=") || a === "--no-ocr") {
@@ -244,9 +244,9 @@ async function executePipeline(cliArgs: string[]): Promise<void> {
   log("PIPELINE COMPLETE");
 }
 
-// --- Run the pipeline in this process (--no-cron mode) ---
+// --- Run the pipeline in this process (--now mode) ---
 async function runPipelineOnce(cliArgs: string[]): Promise<void> {
-  log("RUN triggered (--no-cron)");
+  log("RUN triggered (--now)");
   try {
     await executePipeline(cliArgs);
   } catch (err) {
