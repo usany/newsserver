@@ -7,8 +7,9 @@
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
-    "build": "nest build && npm run build:scripts",
+    "build": "nest build && npm run build:scripts && npm run copy:config",
     "build:scripts": "tsc --project tsconfig.scripts.json",
+    "copy:config": "node -e \"require('fs').copyFileSync('pipeline-orchestration.json', 'dist/pipeline-orchestration.json')\"",
     "deploy": "nest deploy",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\"",
     "start": "nest start",
