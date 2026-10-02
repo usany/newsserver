@@ -47,7 +47,7 @@ import { fileURLToPath } from "node:url";
 // const merged = `${extra}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"}`;
 // process.env.PATH = [...new Set(merged.split(path.delimiter).filter(Boolean))].join(path.delimiter);
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(ROOT);
 
 const TZ = "Asia/Seoul";
