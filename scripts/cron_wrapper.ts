@@ -36,17 +36,6 @@ import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 
-// const HOME = os.homedir();
-
-// const extra = [
-//   "/opt/homebrew/bin",
-//   "/usr/local/bin",
-//   "/opt/homebrew/opt/node/bin",
-//   `${HOME}/.local/bin`,
-// ].join(path.delimiter);
-// const merged = `${extra}${path.delimiter}${process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"}`;
-// process.env.PATH = [...new Set(merged.split(path.delimiter).filter(Boolean))].join(path.delimiter);
-
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 process.chdir(ROOT);
 
