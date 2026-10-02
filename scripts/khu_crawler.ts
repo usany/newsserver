@@ -21,13 +21,14 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 
 // ----------------------------------------------------------------------------
 // Config
 // ----------------------------------------------------------------------------
-const ROOT = process.cwd();
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const WORK = path.join(ROOT, "_workspace");
 const IMG_DIR = path.join(WORK, "01_notice_images");
 const NOTICE_MD = path.join(WORK, "01_notice.md");

@@ -32,11 +32,13 @@ import * as fss from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // ----------------------------------------------------------------------------
 // Config
 // ----------------------------------------------------------------------------
-const ROOT = process.cwd();
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const WORK = path.join(ROOT, "_workspace");
 const DEFAULT_INPUT = path.join(WORK, "03_news_scenario.md");
 const DEFAULT_OUTPUT_DIR = path.join(ROOT, "store");
@@ -44,6 +46,11 @@ const DEFAULT_OUTPUT_DIR = path.join(ROOT, "store");
 const DEFAULT_MODEL = "gemini-3.1-flash-tts-preview";
 const DEFAULT_HOST_VOICE = "Kore";
 const DEFAULT_REPORTER_VOICE = "Puck";
+
+// Oracle Cloud Object Storage (S3-compatible)
+const DEFAULT_S3_ENDPOINT = "https://objectstorage.ap-chuncheon-1.oraclecloud.com";
+const DEFAULT_S3_BUCKET = "bucket-20261002-1841";
+const DEFAULT_S3_REGION = "ap-chuncheon-1";
 
 const WEEK_ORDINALS: Record<string, string> = {
   첫째: "w1", 둘째: "w2", 셋째: "w3", 넷째: "w4", 다섯째: "w5", 여섯째: "w6",
@@ -59,6 +66,12 @@ interface Options {
   model: string;
   hostVoice: string;
   reporterVoice: string;
+  useS3: boolean;
+  s3Endpoint: string;
+  s3Bucket: string;
+  s3Region: string;
+  s3AccessKey?: string;
+  s3SecretKey?: string;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -68,6 +81,12 @@ function parseArgs(argv: string[]): Options {
     model: process.env.GEMINI_TTS_MODEL ?? DEFAULT_MODEL,
     hostVoice: process.env.HOST_VOICE ?? DEFAULT_HOST_VOICE,
     reporterVoice: process.env.REPORTER_VOICE ?? DEFAULT_REPORTER_VOICE,
+    useS3: process.env.USE_S3 === "true",
+    s3Endpoint: process.env.S3_ENDPOINT ?? DEFAULT_S3_ENDPOINT,
+    s3Bucket: process.env.S3_BUCKET ?? DEFAULT_S3_BUCKET,
+    s3Region: process.env.S3_REGION ?? DEFAULT_S3_REGION,
+    s3AccessKey: process.env.S3_ACCESS_KEY,
+    s3SecretKey: process.env.S3_SECRET_KEY,
   };
   for (const a of argv) {
     if (a.startsWith("--input=")) opts.input = a.slice("--input=".length);
@@ -75,6 +94,10 @@ function parseArgs(argv: string[]): Options {
     else if (a.startsWith("--model=")) opts.model = a.slice("--model=".length);
     else if (a.startsWith("--host-voice=")) opts.hostVoice = a.slice("--host-voice=".length);
     else if (a.startsWith("--reporter-voice=")) opts.reporterVoice = a.slice("--reporter-voice=".length);
+    else if (a.startsWith("--use-s3")) opts.useS3 = true;
+    else if (a.startsWith("--s3-endpoint=")) opts.s3Endpoint = a.slice("--s3-endpoint=".length);
+    else if (a.startsWith("--s3-bucket=")) opts.s3Bucket = a.slice("--s3-bucket=".length);
+    else if (a.startsWith("--s3-region=")) opts.s3Region = a.slice("--s3-region=".length);
   }
   return opts;
 }
@@ -251,6 +274,34 @@ function convertMp3ToWav(mp3Path: string, wavPath: string): void {
   }
 }
 
+/** Upload wav file to Oracle Cloud Object Storage (S3-compatible). */
+async function uploadToS3(
+  wav: Buffer,
+  filename: string,
+  opts: Options,
+): Promise<string> {
+  const s3Client = new S3Client({
+    region: opts.s3Region,
+    endpoint: opts.s3Endpoint,
+    credentials: opts.s3AccessKey && opts.s3SecretKey ? {
+      accessKeyId: opts.s3AccessKey,
+      secretAccessKey: opts.s3SecretKey,
+    } : undefined,
+  });
+
+  const key = `${filename}`;
+  const command = new PutObjectCommand({
+    Bucket: opts.s3Bucket,
+    Key: key,
+    Body: wav,
+    ContentType: "audio/wav",
+  });
+
+  await s3Client.send(command);
+  const url = `${opts.s3Endpoint}/${opts.s3Bucket}/${key}`;
+  return url;
+}
+
 /** Synthesize, retrying transient API errors and honoring RetryInfo delays. */
 async function synthesizeWithRetry(
   key: string,
@@ -314,7 +365,6 @@ async function main() {
     `[news_builder] model=${opts.model} | host=${opts.hostVoice}, reporter=${opts.reporterVoice}`,
   );
 
-  await fsp.mkdir(opts.outputDir, { recursive: true });
   const { mimeType, data } = await synthesizeWithRetry(
     key,
     opts.model,
@@ -323,13 +373,23 @@ async function main() {
     prompt,
   );
   const wav = toWav(mimeType, data);
-  fss.writeFileSync(outPath, wav);
 
-  const seconds = wav.subarray(44).length / (SAMPLE_RATE * 2);
-  const bytes = fss.statSync(outPath).size;
-  console.log(
-    `[news_builder] OK ${outPath} (${bytes} bytes, ~${seconds.toFixed(1)}s, ${mimeType})`,
-  );
+  if (opts.useS3) {
+    const filename = path.basename(outPath);
+    const url = await uploadToS3(wav, filename, opts);
+    const seconds = wav.subarray(44).length / (SAMPLE_RATE * 2);
+    console.log(
+      `[news_builder] OK ${url} (${wav.length} bytes, ~${seconds.toFixed(1)}s, ${mimeType})`,
+    );
+  } else {
+    await fsp.mkdir(opts.outputDir, { recursive: true });
+    fss.writeFileSync(outPath, wav);
+    const seconds = wav.subarray(44).length / (SAMPLE_RATE * 2);
+    const bytes = fss.statSync(outPath).size;
+    console.log(
+      `[news_builder] OK ${outPath} (${bytes} bytes, ~${seconds.toFixed(1)}s, ${mimeType})`,
+    );
+  }
 }
 
 main().catch((err) => {

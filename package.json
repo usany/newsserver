@@ -26,6 +26,7 @@
     "pipeline:prod": "npm run build:scripts && npx tsx scripts/cron_wrapper.ts --now"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.677.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/observe": "^0.1.8",

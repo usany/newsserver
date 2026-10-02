@@ -27,11 +27,12 @@
 import { createOpencode } from "@opencode-ai/sdk";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ----------------------------------------------------------------------------
 // Config
 // ----------------------------------------------------------------------------
-const ROOT = process.cwd();
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const WORK = path.join(ROOT, "_workspace");
 const DEFAULT_INPUT = path.join(WORK, "01_notice.md");
 const DEFAULT_OUTPUT = path.join(WORK, "03_news_scenario.md");
