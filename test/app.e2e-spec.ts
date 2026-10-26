@@ -1,29 +1,32 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module.js';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
+  let baseUrl: string;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
+
+    // Listen on an ephemeral port so fetch can hit a real HTTP server.
+    const server = await app.listen(0);
+    const address = server.address();
+    baseUrl = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : ''}`;
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Welcome!');
-  });
-
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
+  });
+
+  it('/ (GET)', async () => {
+    const res = await fetch(baseUrl + '/');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('Welcome!');
   });
 });
