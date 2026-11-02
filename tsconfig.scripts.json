@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "target": "ES2023",
+    "outDir": "./dist/scripts",
+    "rootDir": "./scripts",
+    "skipLibCheck": true,
+    "strict": true,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts"]
+}

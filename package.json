@@ -18,7 +18,7 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node dist/main.js",
     "pipeline": "npm run build:scripts && npx tsx scripts/cron_wrapper.ts --now",
     "pipeline:prod": "npx tsx scripts/cron_wrapper.ts --now"
   },
