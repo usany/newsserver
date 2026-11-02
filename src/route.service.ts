@@ -32,7 +32,7 @@ export class RouteService {
     const endpoint = this.storage.getStorageBaseUrl();
     if (!endpoint) {
       throw new HttpException(
-        'STORAGE_URL is not configured',
+        'Object storage is not configured',
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

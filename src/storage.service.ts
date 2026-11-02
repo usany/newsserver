@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { createHash, createHmac } from 'node:crypto';
 import { audioDuration } from './audio-duration.js';
 
 /**
  * A single item discovered in the object storage bucket.
- * `name` is the object key; `url` is a directly-fetchable pre-signed/par URL.
+ * `name` is the object key; `url` is a directly-fetchable signed URL.
  */
 export interface StorageItem {
   name: string;
@@ -14,33 +15,48 @@ export interface StorageItem {
 
 /**
  * Lists and maps objects in the Oracle Cloud Object Storage bucket referenced
- * by `STORAGE_URL` in `.env`.
+ * by `S3_REGION`, `S3_NAMESPACE`, and `S3_BUCKET` in `.env`.
  *
- * `STORAGE_URL` is a pre-authenticated request (PAR) URL of the form:
- *   https://objectstorage.<region>.oraclecloud.com/p/<par-token>/n/<ns>/b/<bucket>/o/
+ * Oracle's S3-compatible API is exposed on the "compat" hostname:
+ *   https://<namespace>.compat.objectstorage.<region>.oraclecloud.com
  *
- * Listing uses the S3-compatible ListObjects API by appending an encoded
- * `prefix` (the object key after `/o/`), plus the S3 list parameters.
- * Individual object URLs are built from the base URL + the object name.
+ * All requests are signed with AWS Signature Version 4 using the S3 service
+ * name (`s3`). Object keys live under `/<bucket>/<key>`.
  */
 @Injectable()
 export class StorageService {
-  private readonly baseUrl: string;
+  private readonly host: string;
+  private readonly bucket: string;
+  private readonly region: string;
+  private readonly accessKey: string;
+  private readonly secretKey: string;
 
   constructor() {
-    const raw = process.env.STORAGE_URL ?? '';
-    // Normalize to end with a single trailing slash so we can append keys.
-    this.baseUrl = raw.endsWith('/') ? raw : `${raw}/`;
+    const region = process.env.S3_REGION ?? '';
+    const namespace = process.env.S3_NAMESPACE ?? '';
+    const bucket = process.env.S3_BUCKET ?? '';
+    this.region = region;
+    this.bucket = bucket;
+    this.accessKey = process.env.S3_ACCESS_KEY ?? '';
+    this.secretKey = process.env.S3_SECRET_KEY ?? '';
+
+    // S3-compatible endpoint: namespace-prefixed compat hostname.
+    this.host =
+      namespace && region
+        ? `${namespace}.compat.objectstorage.${region}.oraclecloud.com`
+        : '';
   }
 
   /** The configured storage base URL (empty string if unset). */
   getStorageBaseUrl(): string {
-    return this.baseUrl;
+    return this.isConfigured()
+      ? `https://${this.host}/${this.bucket}/`
+      : '';
   }
 
-  /** True when a STORAGE_URL is configured. */
+  /** True when the storage endpoint is configured. */
   isConfigured(): boolean {
-    return this.baseUrl.length > 0;
+    return this.host.length > 0 && this.bucket.length > 0;
   }
 
   /**
@@ -54,7 +70,12 @@ export class StorageService {
 
   /** Build the directly-fetchable URL for an object key. */
   getItemUrl(key: string): string {
-    return buildItemUrl(this.baseUrl, key);
+    if (!this.isConfigured()) return '';
+    const encoded = key
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    return `https://${this.host}/${this.bucket}/${encoded}`;
   }
 
   /**
@@ -78,7 +99,11 @@ export class StorageService {
   async getItemSize(key: string): Promise<number> {
     try {
       const objectUrl = this.getItemUrl(key);
-      const res = await fetch(objectUrl, { method: 'HEAD' });
+      if (!objectUrl) return 0;
+      const res = await fetch(objectUrl, {
+        method: 'HEAD',
+        headers: this.getSignedHeaders('HEAD', objectUrl),
+      });
       if (!res.ok) return 0;
       return Number(res.headers.get('content-length') ?? 0) || 0;
     } catch {
@@ -92,8 +117,10 @@ export class StorageService {
    */
   async getItemRange(key: string, start: number, end: number): Promise<Buffer> {
     const objectUrl = this.getItemUrl(key);
+    if (!objectUrl) throw new Error('Object storage is not configured');
+    const range = `bytes=${start}-${end}`;
     const res = await fetch(objectUrl, {
-      headers: { Range: `bytes=${start}-${end}` },
+      headers: this.getSignedHeaders('GET', objectUrl, { Range: range }),
     });
     if (!res.ok && res.status !== 206) {
       throw new Error(`Failed to fetch object range (HTTP ${res.status})`);
@@ -108,21 +135,19 @@ export class StorageService {
    */
   async listItems(prefix = ''): Promise<StorageItem[]> {
     if (!this.isConfigured()) {
-      throw new Error('STORAGE_URL is not configured');
+      throw new Error('Object storage is not configured');
     }
 
-    const url = new URL(this.baseUrl);
-    // The base URL already contains the namespace/bucket/o/ prefix. The S3
-    // list API expects `prefix` to be the object-key prefix, not the full URL.
+    const url = new URL(`https://${this.host}/${this.bucket}`);
     url.searchParams.set('list-type', '2');
     url.searchParams.set('delimiter', '/');
     if (prefix) url.searchParams.set('prefix', prefix);
     url.searchParams.set('max-keys', '1000');
 
     const res = await fetch(url, {
-      // Oracle Object Storage PAR endpoints only support JSON responses;
-      // requesting XML returns 406 Not Acceptable.
-      headers: { Accept: 'application/json' },
+      headers: this.getSignedHeaders('GET', url.toString(), {
+        Accept: 'application/xml',
+      }),
     });
 
     if (!res.ok) {
@@ -133,33 +158,88 @@ export class StorageService {
     }
 
     const text = await res.text();
-    return parseListResponse(text, this.baseUrl);
+    return parseListResponse(text, (name) => this.getItemUrl(name));
+  }
+
+  /**
+   * Build AWS Signature Version 4 headers for a request to Object Storage.
+   * Returns an empty object when credentials are not configured (public buckets).
+   */
+  getSignedHeaders(
+    method: string,
+    fullUrl: string,
+    extra: Record<string, string> = {},
+  ): Record<string, string> {
+    if (!this.accessKey || !this.secretKey) return { ...extra };
+
+    const url = new URL(fullUrl);
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, '');
+    const dateStamp = amzDate.slice(0, 8);
+    const service = 's3';
+
+    const payloadHash = extra['x-amz-content-sha256'] ?? sha256Hex('');
+
+    const headers: Record<string, string> = {
+      host: url.host,
+      'x-amz-date': amzDate,
+      ...extra,
+    };
+    if (!headers['x-amz-content-sha256']) {
+      headers['x-amz-content-sha256'] = payloadHash;
+    }
+
+    // Normalize all header names to lowercase for signing and matching.
+    const normalized: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+      normalized[k.toLowerCase()] = v;
+    }
+
+    const signedHeaders = Object.keys(normalized).sort().join(';');
+
+    const canonicalHeaders = Object.keys(normalized)
+      .sort()
+      .map((k) => `${k}:${normalized[k].trim()}\n`)
+      .join('');
+
+    const canonicalRequest = [
+      method.toUpperCase(),
+      url.pathname,
+      canonicalQueryString(url),
+      canonicalHeaders,
+      signedHeaders,
+      payloadHash,
+    ].join('\n');
+
+    const scope = `${dateStamp}/${this.region}/${service}/aws4_request`;
+    const stringToSign = [
+      'AWS4-HMAC-SHA256',
+      amzDate,
+      scope,
+      sha256Hex(canonicalRequest),
+    ].join('\n');
+
+    const kDate = hmac(`AWS4${this.secretKey}`, dateStamp);
+    const kRegion = hmac(kDate, this.region);
+    const kService = hmac(kRegion, service);
+    const kSigning = hmac(kService, 'aws4_request');
+    const signature = hmacHex(kSigning, stringToSign);
+
+    headers['Authorization'] =
+      `AWS4-HMAC-SHA256 Credential=${this.accessKey}/${scope}, ` +
+      `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    return headers;
   }
 }
 
 /**
  * Parse the S3-compatible ListObjectsV2 XML response into StorageItems.
- * Falls back to parsing a JSON error/list body where possible.
  */
-function parseListResponse(xml: string, baseUrl: string): StorageItem[] {
-  // Prefer JSON if the endpoint returned it (Oracle PAR endpoints do).
-  const trimmed = xml.trim();
-  if (trimmed.startsWith('{')) {
-    try {
-      const json = JSON.parse(trimmed);
-      if (Array.isArray(json.objects)) {
-        return json.objects.map((o: any) => ({
-          name: String(o.name ?? ''),
-          url: buildItemUrl(baseUrl, String(o.name ?? '')),
-          size: Number(o.size ?? 0),
-          lastModified: String(o.lastModified ?? o.timeModified ?? ''),
-        }));
-      }
-    } catch {
-      /* fall through to XML parsing */
-    }
-  }
-
+function parseListResponse(
+  xml: string,
+  buildUrl: (name: string) => string,
+): StorageItem[] {
   const items: StorageItem[] = [];
   const contentsRe = /<Contents>([\s\S]*?)<\/Contents>/g;
   let match: RegExpExecArray | null;
@@ -169,7 +249,7 @@ function parseListResponse(xml: string, baseUrl: string): StorageItem[] {
     if (!name) continue;
     items.push({
       name,
-      url: buildItemUrl(baseUrl, name),
+      url: buildUrl(name),
       size: Number(extractTag(block, 'Size') ?? 0),
       lastModified: extractTag(block, 'LastModified') ?? '',
     });
@@ -177,21 +257,33 @@ function parseListResponse(xml: string, baseUrl: string): StorageItem[] {
   return items;
 }
 
-/**
- * Build a directly-fetchable object URL from the base URL and object key.
- * Only the segments of the key are percent-encoded; the `/` separators are
- * preserved so nested keys (e.g. `2026_08_w2/full.wav`) resolve correctly.
- */
-function buildItemUrl(baseUrl: string, name: string): string {
-  const encoded = name
-    .split('/')
-    .map((segment) => encodeURIComponent(segment))
-    .join('/');
-  return baseUrl + encoded;
-}
-
 function extractTag(block: string, tag: string): string | undefined {
   const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`);
   const m = re.exec(block);
   return m ? m[1].trim() : undefined;
+}
+
+function sha256Hex(data: string | Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function hmac(key: string | Buffer, data: string | Buffer): Buffer {
+  return createHmac('sha256', key).update(data).digest();
+}
+
+function hmacHex(key: string | Buffer, data: string | Buffer): string {
+  return createHmac('sha256', key).update(data).digest('hex');
+}
+
+/** Build the canonical query string per SigV4 (URI-encoded, sorted by key). */
+function canonicalQueryString(url: URL): string {
+  if (!url.searchParams.size) return '';
+  const pairs: [string, string][] = [];
+  for (const [key, value] of url.searchParams.entries()) {
+    pairs.push([encodeURIComponent(key), encodeURIComponent(value)]);
+  }
+  pairs.sort((a, b) =>
+    a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : 1,
+  );
+  return pairs.map(([k, v]) => `${k}=${v}`).join('&');
 }

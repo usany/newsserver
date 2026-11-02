@@ -44,7 +44,9 @@ export class RouteController {
     }
 
     const objectUrl = this.storage.getItemUrl(key);
-    const upstream = await fetch(objectUrl);
+    const upstream = await fetch(objectUrl, {
+      headers: this.storage.getSignedHeaders('GET', objectUrl),
+    });
     if (!upstream.ok || !upstream.body) {
       throw new HttpException(
         `Failed to fetch object (HTTP ${upstream.status})`,
